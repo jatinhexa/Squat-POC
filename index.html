@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Squat Analyzer POC</title>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#15181d; --muted:#5d6673; --line:#dde1e7;
+  --accent:#2563eb; --left:#2f7fd8; --right:#e8833a; --good:#15803d; --warn:#c2410c; --bad:#b91c1c;
+  --hud:rgba(10,12,16,.72); --hudInk:#fff;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --panel:#181b21; --ink:#e8eaee; --muted:#9aa3af; --line:#2a2f38;
+    --accent:#60a5fa; --left:#5ea3f0; --right:#f29a57; --good:#4ade80; --warn:#fb923c; --bad:#f87171;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --panel:#181b21; --ink:#e8eaee; --muted:#9aa3af; --line:#2a2f38;
+  --accent:#60a5fa; --left:#5ea3f0; --right:#f29a57; --good:#4ade80; --warn:#fb923c; --bad:#f87171;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0}
+h2{font-size:16px;margin:0 0 10px}
+.sub{color:var(--muted);font-size:13px}
+header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+button,select,.filebtn{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+.filebtn input{display:none}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.stage{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center}
+.stage canvas{max-width:100%;max-height:100%;display:block}
+.stage .placeholder{color:#aab;position:absolute;text-align:center;padding:20px}
+.hud{position:absolute;top:10px;left:10px;background:var(--hud);color:var(--hudInk);border-radius:10px;padding:8px 12px;font-variant-numeric:tabular-nums;font-size:13px;pointer-events:none}
+.hud .reps{font-size:34px;font-weight:700;line-height:1}
+.hud table{border-collapse:collapse;margin-top:6px}
+.hud td{padding:1px 6px 1px 0}
+.hud .l{color:#8cc4ff}.hud .r{color:#ffbf8a}
+.banner{position:absolute;left:50%;transform:translateX(-50%);padding:8px 14px;border-radius:999px;font-weight:600;font-size:15px;text-align:center;max-width:92%;pointer-events:none;transition:opacity .2s}
+.banner.cue{bottom:14px;background:var(--hud);color:#fff}
+.banner.cue.good{background:rgba(21,128,61,.9)}
+.banner.cue.warn{background:rgba(194,65,12,.92)}
+.banner.setup{top:10px;right:10px;left:auto;transform:none;background:rgba(185,28,28,.9);color:#fff;font-size:13px;max-width:60%}
+.hidden{display:none!important}
+details summary{cursor:pointer;font-weight:600}
+.sliders{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px 18px;margin-top:10px}
+.sliders label{display:block;font-size:13px;color:var(--muted)}
+.sliders input{width:100%}
+.sliders b{color:var(--ink);font-variant-numeric:tabular-nums}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:12px}
+.stat{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.stat .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat .k{font-size:12px;color:var(--muted)}
+.tablewrap{overflow-x:auto}
+table.reps{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+table.reps th,table.reps td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.reps tr{cursor:pointer}
+table.reps tr:hover td{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.ok{color:var(--good);font-weight:600}.bad{color:var(--warn);font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:820px){.grid2{grid-template-columns:1fr}}
+.chartbox{position:relative;height:280px}
+#view3d{height:320px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:color-mix(in srgb,var(--panel) 85%,var(--accent) 4%)}
+.scrub{display:flex;gap:8px;align-items:center;margin-top:8px}
+.scrub input{flex:1}
+.mono{font-variant-numeric:tabular-nums}
+.rombars{display:grid;gap:8px}
+.rombar{display:grid;grid-template-columns:70px 1fr 60px;gap:8px;align-items:center;font-size:14px}
+.rombar .track{height:14px;background:var(--line);border-radius:7px;overflow:hidden}
+.rombar .fill{height:100%;width:0}
+footer{color:var(--muted);font-size:12px;text-align:center;padding:10px 0 30px}
+</style>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <h1>Squat Analyzer <span class="sub">POC</span></h1>
+    <div class="sub">Pose estimation runs on this device (MediaPipe). No video is uploaded anywhere.</div>
+  </div>
+  <div class="sub" id="modelStatus">Loading pose model…</div>
+</header>
+
+<div class="bar">
+  <select id="mode" title="Mode">
+    <option value="squat">Squat analysis</option>
+    <option value="arm">ROM: arm raise (L vs R)</option>
+    <option value="knee">ROM: knee bend (L vs R)</option>
+  </select>
+  <select id="facing" title="Camera">
+    <option value="user">Front camera</option>
+    <option value="environment">Back camera</option>
+  </select>
+  <button id="btnCam" class="primary">Start camera</button>
+  <label class="filebtn" id="btnFile">Upload video<input type="file" id="file" accept="video/*"></label>
+  <button id="btnSet" disabled>Start set</button>
+  <label class="sub"><input type="checkbox" id="voice"> Voice cues</label>
+</div>
+
+<div class="panel" style="padding:0;border:none;background:none">
+  <div class="stage" id="stage">
+    <div class="placeholder" id="placeholder">Start the camera or upload a squat video.<br>Side-on or 45° view works best for depth and lean; front view for knee tracking.</div>
+    <canvas id="canvas" width="1280" height="720"></canvas>
+    <div class="hud hidden" id="hud">
+      <div><span class="reps" id="repCount">0</span> <span id="repLabel">reps</span></div>
+      <div id="phase" style="opacity:.8">—</div>
+      <table>
+        <tr><td></td><td class="l">Left</td><td class="r">Right</td></tr>
+        <tr><td>Knee</td><td id="kL">–</td><td id="kR">–</td></tr>
+        <tr><td>Hip</td><td id="hL">–</td><td id="hR">–</td></tr>
+        <tr><td>Lean</td><td colspan="2" id="lean">–</td></tr>
+      </table>
+    </div>
+    <div class="banner setup hidden" id="setup"></div>
+    <div class="banner cue hidden" id="cue"></div>
+  </div>
+  <div class="sub" style="margin-top:6px" id="hint">Uploaded video: click the video to pause / resume.</div>
+</div>
+
+<div class="panel hidden" id="romPanel">
+  <h2 id="romTitle">Range of motion</h2>
+  <div class="rombars">
+    <div class="rombar"><span>Left</span><div class="track"><div class="fill" id="romLbar" style="background:var(--left)"></div></div><span class="mono" id="romL">0°</span></div>
+    <div class="rombar"><span>Right</span><div class="track"><div class="fill" id="romRbar" style="background:var(--right)"></div></div><span class="mono" id="romR">0°</span></div>
+  </div>
+  <p class="sub" id="romVerdict" style="margin:10px 0 0">Move through your full range a few times on each side.</p>
+  <button id="romReset" style="margin-top:10px">Reset ROM</button>
+</div>
+
+<details class="panel">
+  <summary>Thresholds (tune live)</summary>
+  <div class="sliders" id="sliders"></div>
+  <button id="resetCfg" style="margin-top:10px">Reset to defaults</button>
+</details>
+
+<section class="panel hidden" id="summary">
+  <h2>Set summary</h2>
+  <div class="stats" id="stats"></div>
+  <div class="tablewrap"><table class="reps" id="repTable"></table></div>
+  <div class="grid2" style="margin-top:14px">
+    <div>
+      <h2>Knee angle over time <span class="sub">(click to seek)</span></h2>
+      <div class="chartbox"><canvas id="chart"></canvas></div>
+    </div>
+    <div>
+      <h2>3D replay <span class="sub">(drag to rotate, scroll to zoom)</span></h2>
+      <div id="view3d"></div>
+      <div class="scrub">
+        <button id="play">Play</button>
+        <input type="range" id="scrub" min="0" max="0" value="0">
+        <span class="mono sub" id="scrubT">0.0s</span>
+      </div>
+    </div>
+  </div>
+</section>
+<footer>HexaCoder Technologies · Squat Analyzer proof of concept</footer>
+</main>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+/* ---------------- Tunable thresholds ---------------- */
+const DEFAULTS = {
+  standAngle: 160,   // knee angle at/above this = standing (rep ends here)
+  downAngle: 120,    // knee must go below this for the movement to count as a squat (filters small bobs)
+  depthTarget: 95,   // bottom knee angle above this -> "Go deeper"
+  leanMax: 45,       // torso lean from vertical above this -> "Keep chest up"
+  valgusRatio: 0.85, // front view: knee width / ankle width below this -> "Push knees out"
+  minVis: 0.5,       // landmark confidence needed for the full-body check
+  smoothing: 0.5,    // EMA factor on angles (0 = raw, 0.9 = very smooth)
+};
+const SPEC = [
+  ['standAngle','Standing when knee ≥',140,178,1,'°'],
+  ['downAngle','Counts as squat when knee ≤',80,150,1,'°'],
+  ['depthTarget','"Go deeper" if bottom knee >',60,130,1,'°'],
+  ['leanMax','"Keep chest up" if torso lean >',20,75,1,'°'],
+  ['valgusRatio','"Push knees out" if knee/ankle width <',0.5,1.2,0.05,''],
+  ['minVis','Landmark confidence ≥',0.2,0.9,0.05,''],
+  ['smoothing','Angle smoothing',0,0.9,0.05,''],
+];
+let CFG = {...DEFAULTS};
+try { Object.assign(CFG, JSON.parse(localStorage.getItem('squatCfg') || '{}')); } catch {}
+
+/* ---------------- Constants ---------------- */
+const $ = s => document.querySelector(s);
+const KEY = {11:'L shoulder',12:'R shoulder',23:'L hip',24:'R hip',25:'L knee',26:'R knee',27:'L ankle',28:'R ankle'};
+const CONN = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,29],[29,31],[27,31],[28,30],[30,32],[28,32]];
+const JOINTS = [0,11,12,13,14,15,16,23,24,25,26,27,28,29,30,31,32];
+const isLeft = i => i % 2 === 1 && i >= 11;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---------------- State ---------------- */
+const S = {
+  source: null, mirror: false, reps: [], cand: null, phase: '—', sm: null,
+  frames: [], recording: false, recStart: 0, rom: {L:0, R:0},
+};
+let mode = 'squat', landmarker = null, lastTs = 0, lastVideoTime = -1;
+const video = document.createElement('video');
+video.playsInline = true; video.muted = true;
+const canvas = $('#canvas'), ctx = canvas.getContext('2d');
+
+/* ---------------- Model ---------------- */
+async function loadModel(){
+  const files = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts = d => ({
+    baseOptions:{ modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task", delegate:d },
+    runningMode:"VIDEO", numPoses:1,
+  });
+  try { landmarker = await PoseLandmarker.createFromOptions(files, opts("GPU")); $('#modelStatus').textContent = 'Pose model ready (GPU)'; }
+  catch(e){ console.warn('GPU failed, using CPU', e); landmarker = await PoseLandmarker.createFromOptions(files, opts("CPU")); $('#modelStatus').textContent = 'Pose model ready (CPU)'; }
+}
+const modelReady = loadModel().catch(e => { $('#modelStatus').textContent = 'Model failed to load: ' + e.message; console.error(e); });
+
+/* ---------------- Geometry ---------------- */
+function angle3(a,b,c){
+  const v1=[a.x-b.x,a.y-b.y,a.z-b.z], v2=[c.x-b.x,c.y-b.y,c.z-b.z];
+  const d=v1[0]*v2[0]+v1[1]*v2[1]+v1[2]*v2[2];
+  const n=Math.hypot(...v1)*Math.hypot(...v2) || 1e-9;
+  return Math.acos(Math.max(-1,Math.min(1,d/n)))*180/Math.PI;
+}
+const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2,z:(a.z+b.z)/2});
+function metrics(w){
+  const sh=mid(w[11],w[12]), hp=mid(w[23],w[24]);
+  const v={x:sh.x-hp.x,y:sh.y-hp.y,z:sh.z-hp.z};
+  const lean=Math.acos(Math.max(-1,Math.min(1,-v.y/(Math.hypot(v.x,v.y,v.z)||1e-9))))*180/Math.PI; // world y points down
+  const dxS=Math.abs(w[11].x-w[12].x), dzS=Math.abs(w[11].z-w[12].z);
+  return {
+    kL:angle3(w[23],w[25],w[27]), kR:angle3(w[24],w[26],w[28]),
+    hL:angle3(w[11],w[23],w[25]), hR:angle3(w[12],w[24],w[26]),
+    sL:angle3(w[23],w[11],w[13]), sR:angle3(w[24],w[12],w[14]),
+    lean,
+    frontal: dxS > dzS*1.2,
+    valgus: Math.abs(w[25].x-w[26].x)/Math.max(1e-3,Math.abs(w[27].x-w[28].x)),
+  };
+}
+
+/* ---------------- Per-frame pipeline ---------------- */
+function processFrame(lm, wl, t){
+  const missing = Object.entries(KEY).filter(([i]) => {
+    const p = lm[i]; return (p.visibility ?? 1) < CFG.minVis || p.x < 0.01 || p.x > 0.99 || p.y < 0.01 || p.y > 0.99;
+  }).map(([,n]) => n);
+  const setup = $('#setup');
+  if (missing.length){
+    setup.textContent = 'Step back – full body must be in frame (missing: ' + missing.join(', ') + ')';
+    setup.classList.remove('hidden');
+    return null;
+  }
+  setup.classList.add('hidden');
+  const raw = metrics(wl);
+  if (!S.sm) S.sm = {...raw};
+  else { const a = CFG.smoothing; for (const k of ['kL','kR','hL','hR','sL','sR','lean','valgus']) S.sm[k] = a*S.sm[k] + (1-a)*raw[k]; S.sm.frontal = raw.frontal; }
+  const m = S.sm;
+  if (S.recording){
+    const w = new Float32Array(99);
+    for (let i=0;i<33;i++){ w[i*3]=wl[i].x; w[i*3+1]=wl[i].y; w[i*3+2]=wl[i].z; }
+    S.frames.push({t:(t-S.recStart)/1000, w, kL:m.kL, kR:m.kR, hL:m.hL, hR:m.hR, lean:m.lean});
+  }
+  if (mode === 'squat') squatLogic(m, t); else romLogic(m);
+  return m;
+}
+
+function addCue(c, text){
+  if (c.cues.has(text)) return;
+  c.cues.add(text); showCue(text, 'warn'); speak(text);
+}
+function squatLogic(m, t){
+  const knee = (m.kL + m.kR) / 2;
+  let c = S.cand;
+  if (knee < CFG.standAngle){
+    if (!c) c = S.cand = {start:t, minKnee:knee, minT:t, minHip:Math.min(m.hL,m.hR), maxLean:m.lean, minValgus:Infinity, down:false, cues:new Set()};
+    if (knee < c.minKnee){ c.minKnee = knee; c.minT = t; c.minHip = Math.min(m.hL,m.hR); }
+    c.maxLean = Math.max(c.maxLean, m.lean);
+    if (knee < CFG.downAngle) c.down = true;
+    if (c.down){
+      if (m.lean > CFG.leanMax) addCue(c, 'Keep chest up');
+      if (m.frontal && knee < CFG.downAngle + 10){
+        c.minValgus = Math.min(c.minValgus, m.valgus);
+        if (m.valgus < CFG.valgusRatio) addCue(c, 'Push knees out');
+      }
+      if (knee > c.minKnee + 10 && c.minKnee > CFG.depthTarget) addCue(c, 'Go deeper');
+    }
+    S.phase = c.down ? (knee > c.minKnee + 5 ? 'rising ↑' : 'bottom ↓') : 'descending';
+  } else {
+    if (c && c.down){
+      if (c.minKnee > CFG.depthTarget) c.cues.add('Go deeper');
+      const rep = {
+        n:S.reps.length+1, start:(c.start-S.recStart)/1000, end:(t-S.recStart)/1000, bottom:(c.minT-S.recStart)/1000,
+        depth:c.minKnee, hip:c.minHip, lean:c.maxLean, valgus:isFinite(c.minValgus)?c.minValgus:null, cues:[...c.cues],
+      };
+      S.reps.push(rep);
+      if (rep.cues.length) showCue(`Rep ${rep.n}: ${rep.cues.join(' · ')}`, 'warn');
+      else { showCue(`Rep ${rep.n} ✓ Good rep`, 'good'); speak(`${rep.n}`); }
+    }
+    S.cand = null; S.phase = 'standing';
+  }
+}
+
+function romLogic(m){
+  const L = mode === 'arm' ? m.sL : 180 - m.kL;
+  const R = mode === 'arm' ? m.sR : 180 - m.kR;
+  S.rom.L = Math.max(S.rom.L, L); S.rom.R = Math.max(S.rom.R, R);
+  const max = mode === 'arm' ? 180 : 160;
+  $('#romL').textContent = S.rom.L.toFixed(0)+'°'; $('#romR').textContent = S.rom.R.toFixed(0)+'°';
+  $('#romLbar').style.width = Math.min(100,S.rom.L/max*100)+'%'; $('#romRbar').style.width = Math.min(100,S.rom.R/max*100)+'%';
+  const hi = Math.max(S.rom.L, S.rom.R);
+  if (hi > 20){
+    const asym = Math.abs(S.rom.L-S.rom.R)/hi*100;
+    const weaker = S.rom.L < S.rom.R ? 'left' : 'right';
+    $('#romVerdict').innerHTML = asym > 10
+      ? `<span class="bad">Asymmetry ${asym.toFixed(0)}%</span> – ${weaker} side has less range.`
+      : `<span class="ok">Balanced</span> – difference ${asym.toFixed(0)}%.`;
+  }
+}
+
+/* ---------------- Cues / voice ---------------- */
+let cueTimer;
+function showCue(text, kind){
+  const el = $('#cue'); el.textContent = text; el.className = 'banner cue ' + kind;
+  clearTimeout(cueTimer); cueTimer = setTimeout(() => el.classList.add('hidden'), 1800);
+}
+function speak(text){
+  if (!$('#voice').checked || !('speechSynthesis' in window)) return;
+  speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+}
+
+/* ---------------- Drawing ---------------- */
+function draw(lm, m){
+  const W = canvas.width, H = canvas.height;
+  ctx.save();
+  if (S.mirror){ ctx.translate(W,0); ctx.scale(-1,1); }
+  ctx.drawImage(video, 0, 0, W, H);
+  ctx.restore();
+  if (!lm) return;
+  const P = i => ({x:(S.mirror ? 1-lm[i].x : lm[i].x)*W, y:lm[i].y*H});
+  const lw = Math.max(2, W/320);
+  ctx.lineWidth = lw; ctx.lineCap = 'round';
+  for (const [a,b] of CONN){
+    ctx.strokeStyle = (isLeft(a) && isLeft(b)) ? '#5ea3f0' : (!isLeft(a) && !isLeft(b)) ? '#f29a57' : '#ffffff';
+    const pa=P(a), pb=P(b); ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
+  }
+  for (const i of JOINTS.slice(1)){
+    const p=P(i); ctx.fillStyle = isLeft(i) ? '#5ea3f0' : '#f29a57';
+    ctx.beginPath(); ctx.arc(p.x,p.y,lw*1.6,0,Math.PI*2); ctx.fill();
+  }
+  if (!m) return;
+  const fs = Math.round(W/42); ctx.font = `600 ${fs}px system-ui,sans-serif`;
+  const label = (i, txt, color) => {
+    const p = P(i), x = p.x + fs*0.6, y = p.y;
+    const w = ctx.measureText(txt).width;
+    ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(x-4, y-fs, w+8, fs*1.3);
+    ctx.fillStyle = color; ctx.fillText(txt, x, y);
+  };
+  if (mode === 'arm'){ label(13, `${m.sL.toFixed(0)}°`, '#8cc4ff'); label(14, `${m.sR.toFixed(0)}°`, '#ffbf8a'); }
+  else {
+    label(25, `${m.kL.toFixed(0)}°`, '#8cc4ff'); label(26, `${m.kR.toFixed(0)}°`, '#ffbf8a');
+    if (mode === 'squat'){ label(23, `${m.hL.toFixed(0)}°`, '#8cc4ff'); label(24, `${m.hR.toFixed(0)}°`, '#ffbf8a'); }
+  }
+}
+function updateHud(m){
+  $('#hud').classList.remove('hidden');
+  $('#repCount').textContent = S.reps.length;
+  $('#phase').textContent = (S.recording ? '● REC  ' : '') + S.phase;
+  const f = v => v == null ? '–' : v.toFixed(0)+'°';
+  $('#kL').textContent = f(m?.kL); $('#kR').textContent = f(m?.kR);
+  $('#hL').textContent = f(m?.hL); $('#hR').textContent = f(m?.hR);
+  $('#lean').textContent = m ? `${m.lean.toFixed(0)}° ${m.frontal ? '(front view)' : '(side view)'}` : '–';
+}
+
+function loop(){
+  requestAnimationFrame(loop);
+  if (!S.source || video.readyState < 2) return;
+  if (canvas.width !== video.videoWidth && video.videoWidth){ canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
+  if (video.currentTime === lastVideoTime || !landmarker) { if(!landmarker) draw(null); return; }
+  lastVideoTime = video.currentTime;
+  let ts = performance.now(); if (ts <= lastTs) ts = lastTs + 1; lastTs = ts;
+  const res = landmarker.detectForVideo(video, ts);
+  const t = S.source === 'file' ? video.currentTime*1000 : ts;
+  let m = null, lm = res.landmarks?.[0];
+  if (lm){ m = processFrame(lm, res.worldLandmarks[0], t); }
+  else { $('#setup').textContent = 'No person detected – step into view'; $('#setup').classList.remove('hidden'); }
+  draw(lm, m); updateHud(m);
+}
+requestAnimationFrame(loop);
+
+/* ---------------- Sources & set control ---------------- */
+function nowT(){ return S.source === 'file' ? video.currentTime*1000 : performance.now(); }
+function startSet(){
+  S.reps = []; S.frames = []; S.cand = null; S.recording = true; S.recStart = nowT();
+  $('#btnSet').textContent = 'End set'; $('#summary').classList.add('hidden');
+}
+function endSet(){
+  S.recording = false; $('#btnSet').textContent = 'Start set';
+  showSummary();
+}
+$('#btnSet').onclick = () => S.recording ? endSet() : startSet();
+
+async function startCamera(){
+  stopSource();
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:$('#facing').value, width:{ideal:1280}, height:{ideal:720}}, audio:false});
+    video.srcObject = stream; video.src = ''; await video.play();
+    S.source = 'camera'; S.mirror = $('#facing').value === 'user';
+    afterSourceStart();
+  } catch(e){ alert('Camera unavailable: ' + e.message + '\n(Camera needs https:// or localhost.)'); }
+}
+function stopSource(){
+  if (video.srcObject){ video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  if (S.recording) endSet();
+  S.sm = null; S.cand = null; lastVideoTime = -1;
+}
+function afterSourceStart(){
+  $('#placeholder').classList.add('hidden'); $('#btnSet').disabled = false;
+  $('#btnCam').textContent = 'Restart camera';
+}
+$('#btnCam').onclick = startCamera;
+$('#file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  stopSource(); await modelReady;
+  video.src = URL.createObjectURL(f); video.loop = false;
+  S.source = 'file'; S.mirror = false;
+  video.onloadeddata = async () => { afterSourceStart(); video.currentTime = 0; await video.play(); startSet(); };
+  video.onended = () => { if (S.recording) endSet(); };
+  e.target.value = '';
+};
+canvas.onclick = () => { if (S.source === 'file') video.paused ? video.play() : video.pause(); };
+
+$('#mode').onchange = e => {
+  mode = e.target.value;
+  $('#romPanel').classList.toggle('hidden', mode === 'squat');
+  $('#romTitle').textContent = mode === 'arm' ? 'Range of motion – arm raise (shoulder angle)' : 'Range of motion – knee bend (flexion)';
+  resetRom();
+};
+function resetRom(){ S.rom = {L:0,R:0}; $('#romL').textContent='0°'; $('#romR').textContent='0°'; $('#romLbar').style.width='0'; $('#romRbar').style.width='0'; $('#romVerdict').textContent='Move through your full range a few times on each side.'; }
+$('#romReset').onclick = resetRom;
+
+/* ---------------- Threshold sliders ---------------- */
+function buildSliders(){
+  const box = $('#sliders'); box.innerHTML = '';
+  for (const [k,label,min,max,step,unit] of SPEC){
+    const d = document.createElement('div');
+    d.innerHTML = `<label>${label} <b id="v_${k}">${CFG[k]}${unit}</b><input type="range" min="${min}" max="${max}" step="${step}" value="${CFG[k]}"></label>`;
+    d.querySelector('input').oninput = e => {
+      CFG[k] = +e.target.value; $('#v_'+k).textContent = CFG[k] + unit;
+      try { localStorage.setItem('squatCfg', JSON.stringify(CFG)); } catch {}
+      if (chart) chart.draw();
+    };
+    box.appendChild(d);
+  }
+}
+buildSliders();
+$('#resetCfg').onclick = () => { CFG = {...DEFAULTS}; try{localStorage.removeItem('squatCfg');}catch{} buildSliders(); };
+
+/* ---------------- Summary: stats, table, chart ---------------- */
+let chart = null, cursorT = null;
+function showSummary(){
+  const R = S.reps, F = S.frames;
+  $('#summary').classList.remove('hidden');
+  const avg = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
+  const dur = F.length ? F[F.length-1].t - F[0].t : 0;
+  const good = R.filter(r => !r.cues.length).length;
+  const fmt = (v,u='°') => v == null ? '–' : v.toFixed(0)+u;
+  $('#stats').innerHTML = [
+    ['Total reps', R.length], ['Good reps', `${good}/${R.length}`],
+    ['Avg depth (knee)', fmt(avg(R.map(r=>r.depth)))], ['Best depth', fmt(R.length?Math.min(...R.map(r=>r.depth)):null)],
+    ['Avg max lean', fmt(avg(R.map(r=>r.lean)))], ['Set duration', dur.toFixed(1)+'s'],
+  ].map(([k,v]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+  $('#repTable').innerHTML = '<tr><th>#</th><th>Time</th><th>Depth (knee°)</th><th>Hip°</th><th>Max lean°</th><th>Knee/ankle</th><th>Feedback</th></tr>' +
+    (R.length ? R.map(r => `<tr data-t="${r.bottom}"><td>${r.n}</td><td>${r.start.toFixed(1)}–${r.end.toFixed(1)}s</td><td>${r.depth.toFixed(0)}</td><td>${r.hip.toFixed(0)}</td><td>${r.lean.toFixed(0)}</td><td>${r.valgus==null?'–':r.valgus.toFixed(2)}</td><td>${r.cues.length?`<span class="bad">${r.cues.join(', ')}</span>`:'<span class="ok">Good</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="7" class="sub">No full squats detected. Check the thresholds or camera framing.</td></tr>');
+  document.querySelectorAll('#repTable tr[data-t]').forEach(tr => tr.onclick = () => seekTime(+tr.dataset.t));
+  buildChart(); build3D();
+}
+
+const overlayPlugin = {
+  id:'overlay',
+  beforeDatasetsDraw(c){
+    const {ctx:g, chartArea:a, scales:{x,y}} = c;
+    g.save();
+    g.fillStyle = 'rgba(37,99,235,.08)';
+    for (const r of S.reps){ const x0=x.getPixelForValue(r.start), x1=x.getPixelForValue(r.end); g.fillRect(x0,a.top,x1-x0,a.bottom-a.top); }
+    g.setLineDash([4,4]); g.lineWidth = 1;
+    for (const [v,col] of [[CFG.downAngle,css('--muted')],[CFG.depthTarget,css('--good')]]){
+      const py = y.getPixelForValue(v); g.strokeStyle = col; g.beginPath(); g.moveTo(a.left,py); g.lineTo(a.right,py); g.stroke();
+    }
+    g.restore();
+  },
+  afterDatasetsDraw(c){
+    if (cursorT == null) return;
+    const {ctx:g, chartArea:a, scales:{x}} = c, px = x.getPixelForValue(cursorT);
+    g.save(); g.strokeStyle = css('--ink'); g.lineWidth = 1.5; g.beginPath(); g.moveTo(px,a.top); g.lineTo(px,a.bottom); g.stroke(); g.restore();
+  },
+};
+function buildChart(){
+  const F = S.frames, step = Math.max(1, Math.ceil(F.length/1500));
+  const pts = F.filter((_,i) => i % step === 0);
+  if (chart) chart.destroy();
+  const grid = css('--line'), tick = css('--muted');
+  chart = new Chart($('#chart'), {
+    type:'line',
+    data:{datasets:[
+      {label:'Left knee', data:pts.map(f=>({x:f.t,y:f.kL})), borderColor:css('--left'), borderWidth:2, pointRadius:0},
+      {label:'Right knee', data:pts.map(f=>({x:f.t,y:f.kR})), borderColor:css('--right'), borderWidth:2, pointRadius:0},
+    ]},
+    options:{
+      animation:false, responsive:true, maintainAspectRatio:false, parsing:false,
+      interaction:{mode:'nearest', axis:'x', intersect:false},
+      scales:{
+        x:{type:'linear', title:{display:true,text:'seconds',color:tick}, grid:{color:grid}, ticks:{color:tick}},
+        y:{suggestedMin:60, suggestedMax:180, title:{display:true,text:'knee angle °',color:tick}, grid:{color:grid}, ticks:{color:tick}},
+      },
+      plugins:{legend:{labels:{color:tick, boxWidth:12}}, tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(0)}°`}}},
+      onClick:(e,_,c) => seekTime(c.scales.x.getValueForPixel(e.x)),
+    },
+    plugins:[overlayPlugin],
+  });
+}
+
+/* ---------------- 3D replay ---------------- */
+let T3 = null, frameIdx = 0, playing = false, playClock = 0;
+function init3D(){
+  const el = $('#view3d');
+  const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+  el.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+  camera.position.set(1.8, 0.5, 2.4);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(2,3,2); scene.add(dl);
+  const grid = new THREE.GridHelper(4, 20, 0x888888, 0x888888); grid.material.opacity = .35; grid.material.transparent = true; scene.add(grid);
+  const geo = new THREE.SphereGeometry(0.03, 16, 12);
+  const mats = {L:new THREE.MeshStandardMaterial({color:0x2f7fd8}), R:new THREE.MeshStandardMaterial({color:0xe8833a}), C:new THREE.MeshStandardMaterial({color:0x999999})};
+  const spheres = {};
+  for (const i of JOINTS){ const s = new THREE.Mesh(geo, i===0?mats.C:isLeft(i)?mats.L:mats.R); scene.add(s); spheres[i] = s; }
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CONN.length*6), 3));
+  const lines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({color:0x8899aa}));
+  scene.add(lines);
+  const resize = () => { const w = el.clientWidth, h = el.clientHeight; renderer.setSize(w,h); camera.aspect = w/h; camera.updateProjectionMatrix(); };
+  new ResizeObserver(resize).observe(el); resize();
+  let last = performance.now();
+  const tick = now => {
+    requestAnimationFrame(tick);
+    const dt = (now-last)/1000; last = now;
+    if (playing && S.frames.length){
+      playClock += dt;
+      let i = frameIdx; while (i < S.frames.length-1 && S.frames[i+1].t <= playClock) i++;
+      if (i >= S.frames.length-1){ playing = false; $('#play').textContent = 'Play'; }
+      if (i !== frameIdx) setFrame(i);
+    }
+    controls.update(); renderer.render(scene, camera);
+  };
+  requestAnimationFrame(tick);
+  T3 = {spheres, lines, grid, controls};
+}
+const v3 = (w,i) => new THREE.Vector3(w[i*3], -w[i*3+1], -w[i*3+2]);
+function build3D(){
+  if (!T3) init3D();
+  const F = S.frames; $('#scrub').max = Math.max(0, F.length-1);
+  let floor = 0;
+  for (const f of F) for (const i of [27,28,29,30,31,32]) floor = Math.min(floor, -f.w[i*3+1]);
+  T3.grid.position.y = floor;
+  T3.controls.target.set(0, floor/2, 0);
+  playing = false; $('#play').textContent = 'Play';
+  if (F.length) setFrame(0);
+}
+function setFrame(i){
+  const F = S.frames; if (!F.length) return;
+  frameIdx = Math.max(0, Math.min(F.length-1, i));
+  const f = F[frameIdx];
+  for (const j of JOINTS) T3.spheres[j].position.copy(v3(f.w, j));
+  const arr = T3.lines.geometry.attributes.position.array;
+  CONN.forEach(([a,b],k) => { const pa=v3(f.w,a), pb=v3(f.w,b); arr.set([pa.x,pa.y,pa.z,pb.x,pb.y,pb.z], k*6); });
+  T3.lines.geometry.attributes.position.needsUpdate = true;
+  $('#scrub').value = frameIdx;
+  const rep = S.reps.find(r => f.t >= r.start && f.t <= r.end);
+  $('#scrubT').textContent = `${f.t.toFixed(1)}s · knee ${((f.kL+f.kR)/2).toFixed(0)}°${rep ? ' · rep '+rep.n : ''}`;
+  cursorT = f.t; if (chart) chart.draw();
+}
+function seekTime(t){
+  const F = S.frames; if (!F.length) return;
+  let best = 0; for (let i=0;i<F.length;i++) if (Math.abs(F[i].t-t) < Math.abs(F[best].t-t)) best = i;
+  playing = false; $('#play').textContent = 'Play'; setFrame(best);
+}
+$('#scrub').oninput = e => { playing = false; $('#play').textContent = 'Play'; setFrame(+e.target.value); };
+$('#play').onclick = () => {
+  if (!S.frames.length) return;
+  if (frameIdx >= S.frames.length-1) frameIdx = 0;
+  playing = !playing; playClock = S.frames[frameIdx].t; $('#play').textContent = playing ? 'Pause' : 'Play';
+};
+
+/* ---------------- Self-test (?selftest): synthetic squats through the same pipeline ---------------- */
+function synthPose(kneeAngle, leanFactor){
+  const a = (180-kneeAngle)/2*Math.PI/180, l = a*leanFactor;
+  const pts = {}, up = (p,dx,dy) => ({x:p.x+dx, y:p.y+dy});
+  const A = {x:0,y:0}, K = up(A, 0.45*Math.sin(a), 0.45*Math.cos(a)), H = up(K, -0.45*Math.sin(a), 0.45*Math.cos(a));
+  const Sh = up(H, 0.55*Math.sin(l), 0.55*Math.cos(l)), E = up(Sh, 0.12, -0.27), Wr = up(E, 0.22, 0), N = up(Sh, 0.08, 0.2);
+  const set = (i, p, z) => pts[i] = {x:p.x-H.x, y:-(p.y-H.y), z};
+  for (const [L,R,p] of [[11,12,Sh],[13,14,E],[15,16,Wr],[23,24,H],[25,26,K],[27,28,A],[29,30,up(A,-0.06,-0.03)],[31,32,up(A,0.16,-0.05)]]){ set(L,p,-0.12); set(R,p,0.12); }
+  for (let i=0;i<=10;i++) set(i, N, 0);
+  for (let i=17;i<=22;i++) set(i, Wr, i%2 ? -0.12 : 0.12);
+  const wl = [], lm = [];
+  for (let i=0;i<33;i++){ wl.push(pts[i]); lm.push({x:0.5+pts[i].x*0.35, y:0.45+pts[i].y*0.35, z:0, visibility:1}); }
+  return {wl, lm};
+}
+function runSelfTest(){
+  const plan = []; // [durationSec, startKnee, endKnee, lean]
+  const rep = (min, lean) => { plan.push([0.9,175,min,lean],[0.9,min,175,lean],[0.4,175,175,0.5]); };
+  plan.push([0.5,175,175,0.5]);
+  rep(80,0.6);          // good deep rep
+  plan.push([0.5,175,150,0.5],[0.5,150,175,0.5]); // small bob – must be ignored
+  rep(110,0.6);         // shallow -> go deeper
+  rep(82,1.3);          // excessive lean -> keep chest up
+  rep(78,0.6);          // good
+  S.source = 'selftest'; mode = 'squat'; S.recStart = 0; S.recording = true; S.reps = []; S.frames = [];
+  let t = 0;
+  for (const [d,k0,k1,lean] of plan){
+    const n = Math.round(d*30);
+    for (let j=0;j<n;j++){
+      const k = k0 + (k1-k0)*(0.5-0.5*Math.cos(Math.PI*j/n));
+      const {wl,lm} = synthPose(k, lean); processFrame(lm, wl, t); t += 1000/30;
+    }
+  }
+  S.recording = false; showSummary();
+  window.__selftest = S.reps.map(r => ({n:r.n, depth:+r.depth.toFixed(1), lean:+r.lean.toFixed(1), cues:r.cues}));
+  console.log('SELFTEST', JSON.stringify(window.__selftest));
+}
+if (new URLSearchParams(location.search).has('selftest')) runSelfTest();
+</script>
+</body>
+</html>
