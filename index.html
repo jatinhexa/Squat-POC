@@ -156,6 +156,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:10px 0 30px}
       <div id="view3d"></div>
       <div class="scrub">
         <button id="play">Play</button>
+        <button id="resetView" title="Recenter the 3D camera">Reset view</button>
         <input type="range" id="scrub" min="0" max="0" value="0">
         <span class="mono sub" id="scrubT">0.0s</span>
       </div>
@@ -535,9 +536,13 @@ function init3D(){
   el.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
-  camera.position.set(1.8, 0.5, 2.4);
+  const HOME_POS = new THREE.Vector3(1.8, 0.5, 2.4), HOME_TARGET = new THREE.Vector3(0, 0, 0);
+  camera.position.copy(HOME_POS);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  controls.minDistance = 0.8;   // can't zoom in past the skeleton
+  controls.maxDistance = 8;     // can't zoom so far the skeleton vanishes
+  controls.target.copy(HOME_TARGET);
   scene.add(new THREE.AmbientLight(0xffffff, 0.8));
   const dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(2,3,2); scene.add(dl);
   const grid = new THREE.GridHelper(4, 20, 0x888888, 0x888888); grid.material.opacity = .35; grid.material.transparent = true; scene.add(grid);
@@ -564,7 +569,8 @@ function init3D(){
     controls.update(); renderer.render(scene, camera);
   };
   requestAnimationFrame(tick);
-  T3 = {spheres, lines, grid, controls};
+  T3 = {spheres, lines, grid, controls, camera, homePos: HOME_POS, homeTarget: HOME_TARGET.clone(),
+    resetView(){ camera.position.copy(this.homePos); controls.target.copy(this.homeTarget); controls.update(); } };
 }
 const v3 = (w,i) => new THREE.Vector3(w[i*3], -w[i*3+1], -w[i*3+2]);
 function build3D(){
@@ -573,7 +579,8 @@ function build3D(){
   let floor = 0;
   for (const f of F) for (const i of [27,28,29,30,31,32]) floor = Math.min(floor, -f.w[i*3+1]);
   T3.grid.position.y = floor;
-  T3.controls.target.set(0, floor/2, 0);
+  T3.homeTarget.set(0, floor/2, 0);
+  T3.resetView();
   playing = false; $('#play').textContent = 'Play';
   if (F.length) setFrame(0);
 }
@@ -596,6 +603,7 @@ function seekTime(t){
   playing = false; $('#play').textContent = 'Play'; setFrame(best);
 }
 $('#scrub').oninput = e => { playing = false; $('#play').textContent = 'Play'; setFrame(+e.target.value); };
+$('#resetView').onclick = () => { if (T3) T3.resetView(); };
 $('#play').onclick = () => {
   if (!S.frames.length) return;
   if (frameIdx >= S.frames.length-1) frameIdx = 0;
